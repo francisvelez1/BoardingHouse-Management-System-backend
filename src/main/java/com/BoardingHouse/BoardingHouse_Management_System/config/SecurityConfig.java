@@ -15,29 +15,41 @@ import org.springframework.security.config.Customizer;
 @EnableWebSecurity
 public class SecurityConfig {
 
+    private final WebConfig webConfig;
+
+    // Injecting WebConfig to access the CORS configuration source
+    public SecurityConfig(WebConfig webConfig) {
+        this.webConfig = webConfig;
+    }
+
     @Bean
     public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder();
+        return new BCryptPasswordEncoder(); // Used by AuthenticationService to hash/match passwords
     }
 
     @Bean
     public AuthenticationManager authenticationManager(
             AuthenticationConfiguration authConfig) throws Exception {
-        return authConfig.getAuthenticationManager();
+        return authConfig.getAuthenticationManager(); // Required for the AuthenticationService to validate users
     }
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
 
         http
-            // Disable CSRF for APIs / easier testing
+            // Enable CORS using the source defined in WebConfig
+            .cors(cors -> cors.configurationSource(webConfig.corsConfigurationSource()))
+            
+            // Disable CSRF for REST API compatibility
             .csrf(csrf -> csrf.disable())
 
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/login", "/register", "/css/**", "/js/**").permitAll()
+                // Permitting access to the API authentication endpoints and standard pages
+                .requestMatchers("/api/auth/**", "/login", "/register", "/css/**", "/js/**").permitAll()
                 .anyRequest().authenticated()
             )
 
+            // Keeping formLogin for traditional session-based access if needed
             .formLogin(form -> form
                 .loginPage("/login")
                 .defaultSuccessUrl("/dashboard", true)
