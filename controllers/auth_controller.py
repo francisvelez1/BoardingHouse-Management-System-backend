@@ -1,10 +1,3 @@
-"""
-Auth Controller
-Direct equivalent of Authcontroller.java
-
-Maps to /api/auth/* routes.
-"""
-
 from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel
 

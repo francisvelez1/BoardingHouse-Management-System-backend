@@ -1,8 +1,15 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
+from config.database_config import init_database
 from config.security_config import configure_cors
 from config.jwt_middleware import JwtAuthMiddleware
 from controllers.auth_controller import router as auth_router
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await init_database()   # connects on startup
+    yield
 
 app = FastAPI(
     title="Boarding House Management System",
