@@ -36,7 +36,9 @@ CORS_CONFIG = {
     "allow_headers": ["*"],
     "allow_credentials": True,
 }
+#-------
 
+#---------
 
 def configure_cors(app: FastAPI) -> None:
     """

@@ -1,10 +1,3 @@
-"""
-Auth Controller
-Direct equivalent of Authcontroller.java
-
-Maps to /api/auth/* routes.
-"""
-
 from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel
 
@@ -13,12 +6,9 @@ from services.authentication_service import authentication_service
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
-# ---------------------------------------------------------------------------
-# Request / Response Models (replaces Map<String, String> in the Java version)
-# ---------------------------------------------------------------------------
 
 class LoginRequest(BaseModel):
-    """Equivalent to @RequestBody Map<String, String> loginRequest"""
+   
     username: str
     password: str
 
@@ -42,12 +32,7 @@ class LoginResponse(BaseModel):
 )
 async def login(body: LoginRequest):
     """
-    Equivalent to:
-        @PostMapping("/login")
-        public ResponseEntity<?> login(@RequestBody Map<String, String> loginRequest)
-
-    NOTE: In the Java version the AuthenticationManager fetches the user from the DB
-    automatically via UserDetailsService. Here you must supply the stored hash.
+    NOTE: must supply the stored hash.
     Replace `_get_stored_hash()` with your real DB/repository call.
     """
     # ----- Replace this block with your real DB lookup -----
@@ -96,8 +81,5 @@ _FAKE_USER_DB: dict[str, str] = {}  # username -> bcrypt hash
 
 
 def _get_stored_hash(username: str) -> str | None:
-    """
-    Stub - replace with actual DB query.
-    Equivalent to UserDetailsService.loadUserByUsername() in Spring.
-    """
+   
     return _FAKE_USER_DB.get(username)

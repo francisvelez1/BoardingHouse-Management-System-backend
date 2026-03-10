@@ -1,19 +1,18 @@
-
-
 import base64
+import os
 from datetime import datetime, timedelta
 from typing import Any, Callable, Optional
 from jose import JWTError, jwt
 from pydantic_settings import BaseSettings
+from dotenv import load_dotenv
 
+
+load_dotenv()
 
 class JwtSettings(BaseSettings):
-    """
-    Reads JWT config from environment variables / .env file
-    """
-    secret: str = "dGhpcy1pcy1hLXZlcnktc2VjcmV0LWtleS10aGF0LWlzLWxvbmctZW5vdWdo"
-    expiration: int = 3600000            # 1 hour in ms
-    refresh_expiration: int = 604800000  # 7 days in ms
+    secret: str = os.getenv("JWT_SECRET")
+    expiration: int = os.getenv("JWT_EXPIRATION")            # 1 hour in ms
+    refresh_expiration: int = os.getenv("JWT_REFRESH_EXPIRATION")  # 7 days in ms
 
     model_config = {
         "env_prefix": "JWT_",
@@ -24,10 +23,6 @@ class JwtSettings(BaseSettings):
 
 
 class JwtConfig:
-    """
-    Equivalent to JwtConfig.java
-    Handles token generation, validation, and claim extraction.
-    """
 
     ALGORITHM = "HS256"
 
