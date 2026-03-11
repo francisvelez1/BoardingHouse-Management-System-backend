@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel
 
 from services.authentication_service import authentication_service
+from models import user
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 

@@ -3,7 +3,7 @@ from beanie import init_beanie
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic_settings import BaseSettings
 from dotenv import load_dotenv
-
+from models import user
 
 load_dotenv()
 
@@ -25,6 +25,9 @@ async def init_database():
 
     await init_beanie(
         database=database,
-        document_models = []
+        document_models = [
+            user,
+        ]
     )
-    print(f"Connected to MongoDB: {settings.mongodb_name}")
+    print("Connected to MongoDB:", settings.mongodb_name)
+    print(f"Registered models: User")

@@ -15,6 +15,7 @@ app = FastAPI(
     title="Boarding House Management System",
     description="Python/FastAPI port of the Spring Boot auth layer",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 # CORS - equivalent to WebConfig + SecurityConfig .cors() setup
