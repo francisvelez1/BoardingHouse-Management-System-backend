@@ -3,17 +3,18 @@ import os
 from datetime import datetime, timedelta
 from typing import Any, Callable, Optional
 from jose import JWTError, jwt
+from pydantic import Field
 from pydantic_settings import BaseSettings
 from dotenv import load_dotenv
 
 
-load_dotenv()
-
 class JwtSettings(BaseSettings):
-    secret: str = os.getenv("JWT_SECRET")
-    expiration: int = os.getenv("JWT_EXPIRATION")            # 1 hour in ms
-    refresh_expiration: int = os.getenv("JWT_REFRESH_EXPIRATION")  # 7 days in ms
-
+    # Because of env_prefix="JWT_", Pydantic looks for:
+    # JWT_SECRET, JWT_EXPIRATION, and JWT_REFRESH_EXPIRATION
+    
+    secret: str = Field(..., alias="JWT_SECRET")
+    expiration: int = Field(default=3600, alias="JWT_EXPIRATION")          # Default 1h
+    refresh_expiration: int = Field(default=604800, alias="JWT_REFRESH_EXPIRATION") # Default 7d
     model_config = {
         "env_prefix": "JWT_",
         "env_file": ".env",

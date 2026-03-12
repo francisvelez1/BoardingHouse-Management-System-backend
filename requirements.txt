@@ -15,6 +15,7 @@ pip install "passlib[bcrypt]"
 pip install pydantic
 pip install pydantic-settings
 pip install python-dotenv
+pip install pyjwt
 python -m pip install "pymongo[srv]==3.12"
 ```
 

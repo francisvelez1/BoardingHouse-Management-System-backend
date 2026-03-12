@@ -1,16 +1,16 @@
 import os
 from beanie import init_beanie
 from motor.motor_asyncio import AsyncIOMotorClient
+from pydantic import Field
 from pydantic_settings import BaseSettings
-from dotenv import load_dotenv
-from models import user
+from models.user import User
 
-load_dotenv()
 
 
 class DataSettings(BaseSettings):
-    mongodb_url: str = os.getenv("DATABASE_URL")
-    mongodb_name: str = os.getenv("MONGODB_NAME")
+    # Pydantic will automatically look for MONGODB_URL and MONGODB_NAME in your .env
+    mongodb_url: str = Field(..., alias="DATABASE_URL") 
+    mongodb_name: str = Field(..., alias="MONGODB_NAME")
 
     model_config = {
         "env_file": ".env",
@@ -26,7 +26,7 @@ async def init_database():
     await init_beanie(
         database=database,
         document_models = [
-            user,
+            User,
         ]
     )
     print("Connected to MongoDB:", settings.mongodb_name)
