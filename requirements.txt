@@ -16,6 +16,8 @@ pip install pydantic
 pip install pydantic-settings
 pip install python-dotenv
 pip install pyjwt
+pip install motor beanie
+pip install 'pydantic[email]'
 python -m pip install "pymongo[srv]==3.12"
 ```
 
@@ -26,3 +28,6 @@ python -m pip install "pymongo[srv]==3.12"
 `passlib` is currently **not fully compatible with Python 3.14** because it uses `crypt` which was removed in 3.13+. If you hit this error:
 ```
 ModuleNotFoundError: No module named 'crypt'
+
+Run the backend:
+uvicorn main:app --reload --port 8080
