@@ -17,7 +17,7 @@ async def save_user(user: User):
     return user
 #Existing name
 async def exists_by_username(username: str) -> bool:
-    return await User.fid_one(User.username == username) is not None
+    return await User.find_one(User.username == username) is not None
 
 #existing email
 async def exists_by_email(email: str) -> bool:
