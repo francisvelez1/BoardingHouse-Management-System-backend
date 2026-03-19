@@ -64,8 +64,12 @@ PUBLIC_ROUTES = {
     "/api/auth/login",
     "/api/auth/register",
     "/api/auth/forgot-password",
-     "/api/auth/verify-otp",       
-    "/api/auth/reset-password",   
+    "/api/auth/verify-otp",
+    "/api/auth/reset-password",
+
+    # Google OAuth endpoints ← added
+    "/api/auth/google",
+    "/api/auth/google/callback",
 
     # Traditional pages
     "/login",

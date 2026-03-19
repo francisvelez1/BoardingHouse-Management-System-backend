@@ -20,6 +20,8 @@ pip install motor beanie
 pip install 'pydantic[email]'
 python -m pip install "pymongo[srv]==3.12"
 pip install fastapi-mail
+
+pip install authlib httpx
 ```
 
 ---
