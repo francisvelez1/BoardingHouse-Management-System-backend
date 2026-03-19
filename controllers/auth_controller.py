@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, Request, status
+from pydantic import BaseModel
 
 from dto.request.login_request    import LoginRequest
 from dto.request.register_request import RegisterRequest
@@ -43,6 +44,32 @@ async def register(body: RegisterRequest):
         phone      = body.phone,
         role       = RoleName.TENANT,
     )
-
     await save_user(user)
     return {"message": "Registered successfully", "username": user.username}
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+class VerifyOtpRequest(BaseModel):
+    email: str
+    code:  str
+
+class ResetPasswordRequest(BaseModel):
+    reset_token:  str
+    new_password: str
+
+
+@router.post("/forgot-password")
+async def forgot_password(body: ForgotPasswordRequest):
+    return await authentication_service.forgot_password(body.email)
+
+
+@router.post("/verify-otp")
+async def verify_otp(body: VerifyOtpRequest):
+    return await authentication_service.verify_otp(body.email, body.code)
+
+
+@router.post("/reset-password")
+async def reset_password(body: ResetPasswordRequest):
+    return await authentication_service.reset_password(
+        body.reset_token, body.new_password
+    )

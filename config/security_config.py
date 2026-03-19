@@ -64,6 +64,8 @@ PUBLIC_ROUTES = {
     "/api/auth/login",
     "/api/auth/register",
     "/api/auth/forgot-password",
+     "/api/auth/verify-otp",       
+    "/api/auth/reset-password",   
 
     # Traditional pages
     "/login",

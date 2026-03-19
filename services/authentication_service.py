@@ -1,8 +1,13 @@
+from datetime import datetime, timedelta
+import random
+
 from fastapi import HTTPException, status
 
+from config.email_config import send_otp_email
 from config.security_config import password_encoder
 from config.jwt_config import jwt_config
-from repository.user_repository import find_by_username
+from repository.otp_repository import find_otp, mark_otp_used, save_otp
+from repository.user_repository import find_by_email, find_by_username
 
 
 class AuthenticationService:
@@ -45,6 +50,49 @@ class AuthenticationService:
         request.state.username = None
         request.state.authenticated = False
 
+    async def forgot_password(self, email: str):
+        user = await find_by_email(email)
+        if not user:
+            # don't reveal if email exists — security best practice
+            return {"message": "If that email exists, an OTP has been sent"}
 
+        otp_code   = str(random.randint(100000, 999999))
+        expires_at = datetime.utcnow() + timedelta(minutes=10)
+
+        await save_otp(email, otp_code, expires_at)
+        await send_otp_email(email, otp_code)
+
+        return {"message": "If that email exists, an OTP has been sent"}
+
+
+    async def verify_otp(self, email: str, code: str):
+        otp = await find_otp(email, code)
+
+        if not otp:
+            raise HTTPException(400, "Invalid OTP code")
+
+        if datetime.utcnow() > otp.expires_at:
+            raise HTTPException(400, "OTP has expired")
+
+        await mark_otp_used(otp)
+
+        reset_token = jwt_config.generate_token(email)
+        return {"reset_token": reset_token}
+
+
+    async def reset_password(self, reset_token: str, new_password: str):
+        username = jwt_config.get_username_from_token(reset_token)
+        if not username:
+            raise HTTPException(400, "Invalid or expired reset token")
+
+        user = await find_by_email(username)
+        if not user:
+            raise HTTPException(404, "User not found")
+
+        user.password   = self.encode_password(new_password)
+        user.updated_at = datetime.utcnow()
+        await user.save()
+
+        return {"message": "Password reset successfully"}
 # Singleton service instance
 authentication_service = AuthenticationService()

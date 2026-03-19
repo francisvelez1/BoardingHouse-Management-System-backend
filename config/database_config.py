@@ -4,6 +4,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import Field
 from pydantic_settings import BaseSettings
 from models.user import User
+from models.otp import OtpCode
 
 
 
@@ -26,7 +27,7 @@ async def init_database():
     await init_beanie(
         database=database,
         document_models = [
-            User,
+            User, OtpCode,
         ]
     )
     print("Connected to MongoDB:", settings.mongodb_name)
