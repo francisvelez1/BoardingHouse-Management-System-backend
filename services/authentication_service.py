@@ -56,8 +56,10 @@ class AuthenticationService:
     async def forgot_password(self, email: str):
         user = await find_by_email(email)
         if not user:
-            # Don't reveal whether email exists — security best practice
-            return {"message": "If that email exists, an OTP has been sent"}
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="This email is not registered.",
+            )
 
         otp_code   = str(random.randint(100000, 999999))
         expires_at = datetime.utcnow() + timedelta(minutes=10)
