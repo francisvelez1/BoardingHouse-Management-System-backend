@@ -3,9 +3,6 @@ Create and activate the virtual environment:
 py -m venv venv
 venv\Scripts\activate
 
-
-
-
 Dependencies:
 
 # 1. Upgrade pip to the latest version (26.0.1+)
