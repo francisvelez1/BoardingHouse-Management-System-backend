@@ -3,23 +3,29 @@ Create and activate the virtual environment:
 py -m venv venv
 venv\Scripts\activate
 
-
-
-
 Dependencies:
 
-pip install fastapi
-pip install "uvicorn[standard]"
-pip install "python-jose[cryptography]"
-pip install "passlib[bcrypt]"
-pip install pydantic
-pip install pydantic-settings
-pip install python-dotenv
-pip install pyjwt
-pip install motor beanie
-pip install 'pydantic[email]'
+# 1. Upgrade pip to the latest version (26.0.1+)
+python -m pip install --upgrade pip
+
+# 2. Clean out the old, conflicting database drivers
+pip uninstall -y pymongo motor beanie
+
+# 3. Install Web Server & Framework
+pip install fastapi "uvicorn[standard]"
+
+# 4. Install Database (Beanie pulls in the correct Motor/PyMongo automatically)
+pip install beanie pydantic-settings python-dotenv
+
+# 5. Install Security & Authentication
+pip install "python-jose[cryptography]" "passlib[bcrypt]" pyjwt authlib httpx
+
+# 6. Install Validation & Email
+pip install "pydantic[email]" fastapi-mail
+
 pip install --upgrade pymongo motor beanie
-python -m pip install "pymongo[srv]==3.12"
+pip install -U motor
+python -m pip install --upgrade pip
 ```
 
 ---
