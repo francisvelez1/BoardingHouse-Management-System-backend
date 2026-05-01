@@ -86,3 +86,7 @@ coverage.xml
 *.bak
 *.swp
 *.tmp
+
+# .gitignore
+scripts/
+*.seed.py
