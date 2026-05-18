@@ -32,7 +32,7 @@ router = APIRouter(prefix="/api/payments", tags=["Payments"])
 )
 async def get_stats():
     result = await payment_service.get_payment_stats()
-    return ApiResponse(success=True, message="Payment stats retrieved.", data=result)
+    return ApiResponse(is_success=True, message="Payment stats retrieved.", data=result)
 
 
 @router.get(
@@ -131,10 +131,36 @@ async def capture_paypal_payment(
 ):
     result = await payment_service.capture_paypal_payment(
         data        = body,
-        recorded_by = current_user.username,
+        recorded_by = str(current_user.id),
     )
     return ApiResponse(
-        success=True,
+        is_success=True,
+        message="Payment captured and confirmed.",
+        data=result,
+    )
+
+
+@router.post(
+    "/paypal/capture-by-token",
+    response_model=ApiResponse[PaymentResponse],
+    summary="Capture a PayPal payment using only the PayPal order/token id",
+    description=(
+        "Convenience endpoint used by the frontend's PayPal return handler. "
+        "Looks up the internal PENDING payment by its stored order_id, then "
+        "captures and confirms it. Idempotent — if the payment is already "
+        "CONFIRMED, the existing record is returned."
+    ),
+)
+async def capture_paypal_payment_by_token(
+    token: str,
+    current_user: dict = Depends(get_current_user),
+):
+    result = await payment_service.capture_paypal_payment_by_token(
+        order_id    = token,
+        recorded_by = str(current_user.id),
+    )
+    return ApiResponse(
+        is_success=True,
         message="Payment captured and confirmed.",
         data=result,
     )
@@ -154,9 +180,9 @@ async def record_cash_payment(
 ):
     result = await payment_service.record_cash_payment(
         data        = body,
-        recorded_by = current_user.username,
+        recorded_by = str(current_user.id),
     )
-    return ApiResponse(success=True, message="Cash payment recorded.", data=result)
+    return ApiResponse(is_success=True, message="Cash payment recorded.", data=result)
 
 
 # ─── Confirm ──────────────────────────────────────────────────────────────────
@@ -186,7 +212,7 @@ async def confirm_payment(payment_id: str):
 )
 async def delete_payment(payment_id: str):
     result = await payment_service.delete_payment(payment_id)
-    return ApiResponse(success=True, message=result["message"], data=result)
+    return ApiResponse(is_success=True, message=result["message"], data=result)
 
 
 # ─── Self-service: tenant views their own payments ────────────────────────────

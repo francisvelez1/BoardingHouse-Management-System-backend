@@ -15,6 +15,7 @@ from dto.response.room_response import RoomResponse, ManagerInfoResponse
 from exception.resource_not_found_exception import ResourceNotFoundException
 from exception.bad_request_exception import BadRequestException
 from exception.duplicate_resource_exception import DuplicateResourceException
+from fastapi import HTTPException, status as http_status
 
 
 # ================================================================
@@ -34,16 +35,70 @@ async def _assert_room_exists(room_id: PydanticObjectId) -> Room:
 async def _assert_no_duplicate_room_number(
     room_number: str,
     exclude_id: Optional[PydanticObjectId] = None,
+    manager_id: Optional[PydanticObjectId] = None,
 ) -> None:
     """
-    Raises 409 if the room number is already taken by another room.
-    Pass exclude_id when updating so the room's own number is not flagged.
+    Raises 409 if the room number is already taken.
+
+    When `manager_id` is provided, uniqueness is scoped to that manager —
+    so Manager A's "101" does not clash with Manager B's "101". When it
+    is None (admin / legacy callers), uniqueness is global.
+
+    Pass `exclude_id` when updating so the room's own number is not flagged.
     """
-    existing = await room_repository.get_room_by_number(room_number)
+    if manager_id is not None:
+        existing = await room_repository.get_room_by_number_for_manager(
+            manager_id=manager_id, room_number=room_number,
+        )
+    else:
+        existing = await room_repository.get_room_by_number(room_number)
     if existing and existing.id != exclude_id:
         raise DuplicateResourceException(
             f"Room number '{room_number}' already exists."
         )
+
+
+async def _assert_owns_room(
+    room_id: PydanticObjectId,
+    manager_id: PydanticObjectId,
+) -> Room:
+    """
+    Verifies that the room belongs to the given manager. Used by every
+    write endpoint on the manager API (update / status change / maintenance /
+    delete) so Manager B cannot mutate a room owned by Manager A.
+
+    Returns the Room on success. Raises 404 if the room doesn't exist,
+    403 if it exists but is owned by someone else.
+
+    Mirrors the read-side `_owner_clause` ownership rules — legacy rooms
+    whose `created_by` holds either the manager's ObjectId-hex or their
+    username are both accepted.
+    """
+    room = await _assert_room_exists(room_id)
+
+    # New-style ownership: explicit manager_id on the document.
+    if room.manager_id is not None:
+        if room.manager_id != manager_id:
+            raise HTTPException(
+                status_code=http_status.HTTP_403_FORBIDDEN,
+                detail="You can only modify rooms you created.",
+            )
+        return room
+
+    # Legacy fallback: build the set of acceptable `created_by` values
+    # (ObjectId-hex AND username) and check membership.
+    from models.user import User
+    legacy_keys: set[str] = {str(manager_id)}
+    user = await User.get(manager_id)
+    if user and user.username:
+        legacy_keys.add(user.username)
+
+    if (room.created_by or "") not in legacy_keys:
+        raise HTTPException(
+            status_code=http_status.HTTP_403_FORBIDDEN,
+            detail="You can only modify rooms you created.",
+        )
+    return room
 
 
 def _assert_rate_is_positive(rate: float) -> None:
@@ -67,10 +122,14 @@ def _assert_occupants_within_capacity(room: Room) -> None:
 def _build_room_from_request(
     request: RoomCreateRequest,
     created_by: str,
+    manager_id: Optional[PydanticObjectId] = None,
 ) -> Room:
     """
     Constructs a Room document from a validated create request.
     Does not persist — caller must call create_room() after.
+
+    `manager_id` (if provided) is stamped onto the document so the
+    manager dashboard can later scope queries to "rooms I created".
     """
     dimension = None
     if request.dimension:
@@ -105,6 +164,7 @@ def _build_room_from_request(
         dimension=dimension,
         amenities=amenities,
         status=RoomStatus.VACANT,
+        manager_id=manager_id,
         created_by=created_by,
         updated_by=created_by,
     )
@@ -117,21 +177,31 @@ def _build_room_from_request(
 async def create_room(
     request: RoomCreateRequest,
     created_by: str,
+    manager_id: Optional[PydanticObjectId] = None,
 ) -> RoomResponse:
     """
     Creates a new room.
 
     Validations:
-    - Room number must be unique
+    - Room number must be unique within the same manager's namespace
+      (Manager A can have "101" while Manager B also has "101" — they
+      are different boarding houses). When `manager_id` is None the
+      check falls back to global uniqueness, preserving admin behaviour.
     - Monthly rate must be greater than zero
     - Max occupants must be at least 1
 
-    New rooms always start with VACANT status.
+    New rooms always start with VACANT status, and `manager_id` (when
+    given) is persisted so the manager dashboard can scope queries to
+    "rooms I created".
     """
-    await _assert_no_duplicate_room_number(request.room_number)
+    await _assert_no_duplicate_room_number(
+        request.room_number, manager_id=manager_id,
+    )
     _assert_rate_is_positive(request.monthly_rate)
 
-    room = _build_room_from_request(request, created_by)
+    room = _build_room_from_request(
+        request, created_by=created_by, manager_id=manager_id,
+    )
     created = await room_repository.create_room(room)
     return RoomResponse.from_room(created)
 
@@ -147,6 +217,79 @@ async def get_all_rooms(
     """Returns a paginated list of all rooms."""
     rooms = await room_repository.get_all_rooms(skip=skip, limit=limit)
     return [RoomResponse.from_room(r) for r in rooms]
+
+
+# ── Manager-scoped read variants ──────────────────────────────────────────
+#
+# Each of these mirrors a "global" reader above but only returns rooms
+# owned by the given manager. The manager controller delegates here so
+# that Manager B never sees rooms created by Manager A on the dashboard.
+
+async def get_rooms_for_manager(
+    manager_id: PydanticObjectId,
+    skip: int = 0,
+    limit: int = 20,
+    status: Optional[RoomStatus] = None,
+) -> list[RoomResponse]:
+    """Lists rooms owned by the manager, optionally filtered by status."""
+    rooms = await room_repository.get_rooms_by_manager(
+        manager_id=manager_id, skip=skip, limit=limit, status=status,
+    )
+    return [RoomResponse.from_room(r) for r in rooms]
+
+
+async def get_vacant_rooms_for_manager(
+    manager_id: PydanticObjectId,
+    skip: int = 0,
+    limit: int = 20,
+) -> list[RoomResponse]:
+    """Lists the manager's vacant rooms (used by tenant-assignment UIs)."""
+    rooms = await room_repository.get_vacant_rooms_by_manager(
+        manager_id=manager_id, skip=skip, limit=limit,
+    )
+    return [RoomResponse.from_room(r) for r in rooms]
+
+
+async def get_rooms_under_maintenance_for_manager(
+    manager_id: PydanticObjectId,
+    skip: int = 0,
+    limit: int = 20,
+) -> list[RoomResponse]:
+    """Lists the manager's rooms currently under maintenance."""
+    rooms = await room_repository.get_rooms_under_maintenance_by_manager(
+        manager_id=manager_id, skip=skip, limit=limit,
+    )
+    return [RoomResponse.from_room(r) for r in rooms]
+
+
+async def search_rooms_for_manager(
+    manager_id: PydanticObjectId,
+    query: str,
+    skip: int = 0,
+    limit: int = 20,
+) -> list[RoomResponse]:
+    """Searches the manager's rooms by number/description."""
+    if not query or not query.strip():
+        raise BadRequestException("Search query must not be empty.")
+    rooms = await room_repository.search_rooms_by_manager(
+        manager_id=manager_id, query=query.strip(), skip=skip, limit=limit,
+    )
+    return [RoomResponse.from_room(r) for r in rooms]
+
+
+async def get_room_ids_for_manager(
+    manager_id: PydanticObjectId,
+) -> list[str]:
+    """
+    Returns the *string* ObjectIds of every room owned by the manager.
+    Used by the manager controller to filter downstream entities
+    (leases, payments, maintenance, bookings) whose `room_id` is stored
+    as a string.
+    """
+    rooms = await room_repository.get_rooms_by_manager(
+        manager_id=manager_id, skip=0, limit=10_000,
+    )
+    return [str(r.id) for r in rooms]
 
 
 async def get_room_by_id(room_id: PydanticObjectId) -> RoomResponse:
@@ -275,26 +418,46 @@ async def search_rooms(
     return [RoomResponse.from_room(r) for r in rooms]
 
 
-async def get_room_stats() -> dict:
+async def get_room_stats(
+    manager_id: Optional[PydanticObjectId] = None,
+) -> dict:
     """
     Returns room counts grouped by status.
     Used by DashboardService for the occupancy stats grid.
-    """
-    total       = await room_repository.count_all_rooms()
-    vacant      = await room_repository.count_rooms_by_status(RoomStatus.VACANT)
-    occupied    = await room_repository.count_rooms_by_status(RoomStatus.OCCUPIED)
-    maintenance = await room_repository.count_rooms_by_status(RoomStatus.MAINTENANCE)
-    reserved    = await room_repository.count_rooms_by_status(RoomStatus.RESERVED)
 
-    occupancy_rate = round((occupied / total * 100), 2) if total > 0 else 0.0
+    When `manager_id` is provided, the counts only include rooms owned
+    by that manager, so the dashboard cards on the manager page reflect
+    only "my rooms". When None (admin / global call), counts are global.
+    """
+    if manager_id is not None:
+        total       = await room_repository.count_rooms_by_manager(manager_id)
+        vacant      = await room_repository.count_rooms_by_manager(manager_id, RoomStatus.VACANT)
+        occupied    = await room_repository.count_rooms_by_manager(manager_id, RoomStatus.OCCUPIED)
+        maintenance = await room_repository.count_rooms_by_manager(manager_id, RoomStatus.MAINTENANCE)
+        reserved    = await room_repository.count_rooms_by_manager(manager_id, RoomStatus.RESERVED)
+    else:
+        total       = await room_repository.count_all_rooms()
+        vacant      = await room_repository.count_rooms_by_status(RoomStatus.VACANT)
+        occupied    = await room_repository.count_rooms_by_status(RoomStatus.OCCUPIED)
+        maintenance = await room_repository.count_rooms_by_status(RoomStatus.MAINTENANCE)
+        reserved    = await room_repository.count_rooms_by_status(RoomStatus.RESERVED)
+
+    # Count RESERVED rooms as "occupied" for headline occupancy purposes —
+    # a reserved room is committed to a tenant and is no longer revenue-
+    # available, which is what the dashboard wants to measure.
+    occupied_for_rate = occupied + reserved
+    occupancy_rate = round((occupied_for_rate / total * 100), 2) if total > 0 else 0.0
 
     return {
-        "total":          total,
-        "vacant":         vacant,
-        "occupied":       occupied,
-        "maintenance":    maintenance,
-        "reserved":       reserved,
-        "occupancy_rate": f"{occupancy_rate}%",
+        "total":              total,
+        "vacant":             vacant,
+        "occupied":           occupied,
+        "maintenance":        maintenance,
+        "reserved":           reserved,
+        # Numeric pct — used by frontend (`occupancy_rate_pct`).
+        # Keep the old string field for any legacy consumers.
+        "occupancy_rate_pct": occupancy_rate,
+        "occupancy_rate":     f"{occupancy_rate}%",
     }
 
 
@@ -319,7 +482,13 @@ async def update_room(
     updates: dict = {}
 
     if request.room_number is not None and request.room_number != room.room_number:
-        await _assert_no_duplicate_room_number(request.room_number, exclude_id=room_id)
+        # Scope the duplicate check to the room's own owner so renaming a room
+        # to a number that another manager also uses is allowed.
+        await _assert_no_duplicate_room_number(
+            request.room_number,
+            exclude_id=room_id,
+            manager_id=room.manager_id,
+        )
         updates["room_number"] = request.room_number
 
     if request.floor_level   is not None: updates["floor_level"]   = request.floor_level

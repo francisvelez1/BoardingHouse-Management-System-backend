@@ -10,7 +10,7 @@ from models.message import (
     MessageDirection, MessageStatus,
     AnnouncementStatus, AnnouncementPriority,
 )
-from models.notification import NotificationType
+from models.notification import Notification, NotificationType, NotificationPriority
 from repository.message_repository import (
     find_messages_for_tenant,
     find_thread,
@@ -74,16 +74,37 @@ class CommunicationService:
         )
         saved = await save_message(message)
 
-        # Notify the receiver
-        notif_title = f"New message from {'Tenant' if direction == MessageDirection.TENANT_TO_MANAGEMENT else 'Management'}"
-        await create_notification(
-            user_id        = receiver_id,
-            type           = NotificationType.NEW_MESSAGE,
-            title          = notif_title,
-            message        = body[:100] + ("..." if len(body) > 100 else ""),
-            reference_id   = str(saved.id),
-            reference_type = "message",
-        )
+        # Notify the receiver. Wrapped so a notification failure never
+        # bubbles up as a 500 *after* the message was already persisted —
+        # which is what caused the "message saves but request returns 500"
+        # behaviour the manager saw in the UI.
+        try:
+            notif_title = (
+                "New message from "
+                + ("Tenant" if direction == MessageDirection.TENANT_TO_MANAGEMENT else "Management")
+            )
+            preview = body.strip()
+            preview = preview[:100] + ("..." if len(preview) > 100 else "")
+            await create_notification(
+                Notification(
+                    recipient_id      = receiver_id,
+                    sender_id         = sender_id,
+                    notification_type = NotificationType.NEW_MESSAGE,
+                    priority          = NotificationPriority.NORMAL,
+                    title             = notif_title,
+                    message           = preview,
+                    reference_id      = str(saved.id),
+                    reference_type    = "message",
+                )
+            )
+        except Exception:
+            # Best-effort: log silently. The message itself is already saved.
+            import logging
+            logging.getLogger(__name__).warning(
+                "send_message: failed to create notification for receiver=%s",
+                receiver_id,
+                exc_info=True,
+            )
 
         return saved
 

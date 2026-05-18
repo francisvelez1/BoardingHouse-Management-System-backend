@@ -1,4 +1,4 @@
-from beanie import Document
+from beanie import Document, PydanticObjectId
 from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import datetime
@@ -133,6 +133,18 @@ class Room(Document):
     last_maintenance_date: Optional[datetime] = None
     maintenance_notes:     Optional[str]      = None
 
+    # ── Ownership ─────────────────────────────────────────────
+    # The manager who created this room. Used to scope the manager
+    # dashboard so that each manager only sees their own rooms (and,
+    # transitively, only their own tenants / leases / payments).
+    #
+    # Legacy rooms created before this field was introduced will have
+    # manager_id == None. The repository's owner-filter falls back to
+    # matching created_by == str(manager_id) for those records, which
+    # works because manager_controller.create_room has always stored
+    # str(current_user.id) in created_by.
+    manager_id: Optional[PydanticObjectId] = None
+
     # ── Audit Fields ──────────────────────────────────────────
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
@@ -143,8 +155,12 @@ class Room(Document):
     class Settings:
         name = "rooms"   # MongoDB collection name
         indexes = [
-            [("room_number", 1)],   # unique index on room_number
+            [("room_number", 1)],   # fast lookup by room number (NOT unique
+                                    # globally — uniqueness is enforced per
+                                    # manager at the service layer so two
+                                    # managers can each have their own "101").
             [("status", 1)],        # fast filter by status
+            [("manager_id", 1)],    # fast filter for per-manager scoping
         ]
 
     # ── Computed Properties ───────────────────────────────────

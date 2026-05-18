@@ -85,10 +85,24 @@ class PayPalInitResponse(BaseModel):
 # ── Stats ─────────────────────────────────────────────────────────────────────
 
 class PaymentStatsResponse(BaseModel):
+    # ── Legacy fields (kept for backwards compatibility) ──────────────
     total_collected:  float
     total_pending:    float
     confirmed_count:  int
     pending_count:    int
+
+    # ── New fields consumed by the manager dashboard / Payments tab ───
+    # `paid_count`, `unpaid_count`, `partial_count` drive the
+    # "X paid · Y unpaid · Z partial" header. `total_outstanding`
+    # is the headline "Outstanding" stat card. `monthly_revenue`
+    # is the current-month total of confirmed payments.
+    total_payments:     Optional[int]   = 0
+    paid_count:         Optional[int]   = 0
+    unpaid_count:       Optional[int]   = 0
+    partial_count:      Optional[int]   = 0
+    total_outstanding:  Optional[float] = 0.0
+    monthly_revenue:    Optional[float] = 0.0
+    monthly_collected:  Optional[float] = 0.0
 
 
 # ── Paginated list (kept simple — service returns plain list today) ────────────

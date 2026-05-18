@@ -10,6 +10,7 @@ from models.tenant import (
     EmergencyRelation,
     TenantStatus,
 )
+from models.room import FloorLevel
 
 
 # ================================================================
@@ -99,8 +100,16 @@ class TenantResponse(BaseModel):
     monthly_income: Optional[float] = None
 
     # ── Room assignment ───────────────────────────────────────
-    room_id:      Optional[str]      = None
-    move_in_date: Optional[datetime] = None
+    # `room_number` and `floor_level` are denormalized snapshots of the
+    # tenant's currently assigned room. They are populated by the
+    # `/api/tenants/me` controller (and any other endpoint that wants
+    # them) so the tenant dashboard can render the room hero stats
+    # *without* having to make a secondary `GET /api/rooms/{id}` call.
+    # When `room_id` is None they are also None.
+    room_id:      Optional[str]        = None
+    room_number:  Optional[str]        = None
+    floor_level:  Optional[FloorLevel] = None
+    move_in_date: Optional[datetime]   = None
     status:       TenantStatus
 
     # ── Deposit ───────────────────────────────────────────────

@@ -147,6 +147,38 @@ async def apply_booking(
         emergency_contact_relationship  = body.emergency_contact_relationship,
     )
     await req.insert()
+
+    # ── Notify all managers / admins so the request actually "arrives" ──
+    try:
+        from models.notification import (
+            Notification, NotificationType, NotificationPriority,
+        )
+        recipients = await User.find(
+            {"role": {"$in": [RoleName.MANAGER.value, RoleName.ADMIN.value]}}
+        ).to_list()
+        title   = f"New booking request for Room {room.room_number}"
+        message = (
+            f"{body.full_name} applied to book Room {room.room_number}. "
+            f"Please review the application."
+        )
+        for mgr in recipients:
+            try:
+                await Notification(
+                    recipient_id      = str(mgr.id),
+                    sender_id         = str(current_user.id),
+                    notification_type = NotificationType.ANNOUNCEMENT,
+                    priority          = NotificationPriority.HIGH,
+                    title             = title,
+                    message           = message,
+                    reference_id      = str(req.id),
+                    reference_type    = "booking_request",
+                ).insert()
+            except Exception:
+                # never block the application on notification errors
+                continue
+    except Exception:
+        pass
+
     return {
         "message": "Booking request submitted successfully. Awaiting manager review.",
         "id": str(req.id),
@@ -290,6 +322,22 @@ async def review_booking(
     if req.status != BookingStatus.PENDING:
         raise HTTPException(400, "This booking has already been reviewed.")
 
+    # If we're approving, the target room must still be vacant.
+    # Otherwise we'd leave the booking in an "APPROVED but no tenant"
+    # zombie state, which is what was producing the "Reserved" duplicate
+    # rows in the Tenants tab.
+    if body.status == BookingStatus.APPROVED:
+        target_room = await Room.get(PydanticObjectId(req.room_id))
+        if not target_room:
+            raise HTTPException(404, "Room not found.")
+        if not target_room.is_vacant:
+            raise HTTPException(
+                400,
+                f"Room {target_room.room_number} is no longer available "
+                f"(status: {target_room.status.value}). "
+                f"Reject this booking instead.",
+            )
+
     req.status = body.status
     req.reviewed_by = str(current_user.id)
     req.reviewed_at = datetime.utcnow()
@@ -301,8 +349,59 @@ async def review_booking(
         room = await Room.get(PydanticObjectId(req.room_id))
         if room and room.is_vacant:
             # ── 1. Create Tenant profile from booking data (if not exists) ──
+            #
+            # The `Tenant` collection has *unique* indexes on `phone` and
+            # `email`. Naively inserting a new row blows up with a
+            # duplicate-key error when an old INACTIVE tenant (or a
+            # different user's ACTIVE tenant) already owns the same
+            # phone/email. We resolve the existing row with three rules,
+            # in order:
+            #
+            #   1. Same `user_id` -> always reuse (this is the same
+            #      person reapplying after being unassigned).
+            #   2. Different `user_id` but the existing row is INACTIVE
+            #      -> reuse and re-bind. The row is truly orphaned
+            #      (previous unassign), so taking it over is safe.
+            #   3. Different `user_id` AND the existing row is ACTIVE
+            #      -> hard 400 with a clear message. Silently re-binding
+            #      an active tenant from another user account would
+            #      corrupt their assignment (this is exactly the bug
+            #      that left some manager dashboards showing zero
+            #      tenants after an approval).
             existing_tenant = await Tenant.find_one({"user_id": req.user_id})
+
+            if not existing_tenant:
+                candidate = None
+                if req.phone:
+                    candidate = await Tenant.find_one({"phone": req.phone})
+                if not candidate and req.email:
+                    candidate = await Tenant.find_one({"email": req.email})
+
+                if candidate:
+                    if candidate.status == TenantStatus.ACTIVE:
+                        which = "phone" if (req.phone and candidate.phone == req.phone) else "email"
+                        raise HTTPException(
+                            400,
+                            f"An active tenant already exists with the same {which} "
+                            f"({getattr(candidate, which)}). Please reject this booking, "
+                            f"ask the applicant to use a different {which}, "
+                            f"or unassign the existing tenant first.",
+                        )
+                    existing_tenant = candidate  # INACTIVE → safe to re-bind
+
             if existing_tenant:
+                # Reuse the row. Always overwrite the assignment-critical
+                # fields (`user_id`, `room_id`, `status`, move dates) so
+                # the rest of the flow (lease, room update, tenant
+                # listing) sees a fully-consistent record.
+                existing_tenant.user_id       = req.user_id
+                existing_tenant.room_id       = req.room_id
+                existing_tenant.status        = TenantStatus.ACTIVE
+                existing_tenant.move_in_date  = req.desired_move_in_date or datetime.utcnow()
+                existing_tenant.move_out_date = None
+                existing_tenant.updated_at    = datetime.utcnow()
+                existing_tenant.updated_by    = str(current_user.id)
+                await existing_tenant.save()
                 tenant = existing_tenant
             else:
                 name_parts = req.full_name.strip().split()

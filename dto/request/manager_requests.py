@@ -4,7 +4,7 @@ from typing import Optional
 from datetime import datetime
 from models.room import RoomType, RoomStatus
 from models.lease import LeaseStatus
-from models.payment import PaymentMethod, PaymentType
+from models.payment import PaymentMethod, PaymentType, PaymentStatus
 from models.maintenance import MaintenanceCategory, MaintenancePriority, MaintenanceStatus
 
 
@@ -107,6 +107,14 @@ class RecordPaymentRequest(BaseModel):
     notes:        Optional[str]      = None
     period_start: Optional[datetime] = None
     period_end:   Optional[datetime] = None
+
+    # When set, controls how the payment row is created:
+    #   - CONFIRMED  (default): manager is recording money already received
+    #                           ("+ Record Payment" from the Payments tab).
+    #   - PENDING:              manager is assigning a charge that the tenant
+    #                           still has to pay ("+ Assign Payment" from the
+    #                           Leases tab). Increases lease.outstanding_balance.
+    status:       Optional[PaymentStatus] = None
 
     model_config = {
         "json_schema_extra": {

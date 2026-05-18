@@ -219,6 +219,47 @@ async def get_my_profile(
     current_user=Depends(require_roles(RoleName.TENANT)),
 ):
     data = await tenant_service.get_tenant_by_user_id(current_user.id)
+
+    # ── Denormalize the assigned room's number & floor onto the response
+    # so the tenant dashboard can render the hero stats (room number,
+    # floor) without a secondary `GET /api/rooms/{id}` call. If that
+    # secondary call ever fails (network blip, race condition, room
+    # deleted) the dashboard would otherwise display "—" — which is
+    # exactly the bug we are fixing. ──────────────────────────────────
+    if data:
+        try:
+            from beanie import PydanticObjectId
+            from models.room import Room
+            from models.lease import Lease, LeaseStatus
+
+            # Prefer `tenant.room_id`. If that legacy field was never
+            # synced (e.g. older booking flow before the auto-update),
+            # fall back to the room_id on the tenant's currently ACTIVE
+            # lease. This is what makes the hero stats appear for
+            # tenants whose `tenant.room_id` ended up null in the DB.
+            resolved_room_id: Optional[str] = data.room_id
+            if not resolved_room_id:
+                lease = await Lease.find_one(
+                    Lease.tenant_id == data.id,
+                    Lease.status == LeaseStatus.ACTIVE,
+                )
+                if lease and lease.room_id:
+                    resolved_room_id = lease.room_id
+                    # Surface it on the response so the frontend can
+                    # also use it for downstream calls (maintenance
+                    # form, payment modal, etc.).
+                    data.room_id = resolved_room_id
+
+            if resolved_room_id:
+                room = await Room.get(PydanticObjectId(resolved_room_id))
+                if room:
+                    data.room_number = room.room_number
+                    data.floor_level = room.floor_level
+        except Exception:
+            # Best-effort enrichment — never let a stale room_id break
+            # the entire /me endpoint for the tenant.
+            pass
+
     return ApiResponse.success(
         data=data,
         message="Your tenant profile retrieved successfully.",

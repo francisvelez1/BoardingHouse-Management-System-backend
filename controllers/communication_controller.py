@@ -27,6 +27,21 @@ async def send_message(
     body: SendMessageRequest,
     current_user: User = Depends(get_current_user),
 ):
+    # Defensive guards — prevent 500s from invalid ObjectId strings.
+    if not body.receiver_id or not body.tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="receiver_id and tenant_id are required.",
+        )
+    try:
+        PydanticObjectId(body.receiver_id)
+        PydanticObjectId(body.tenant_id)
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="receiver_id or tenant_id is not a valid id.",
+        )
+
     message = await communication_service.send_message(
         sender_id   = str(current_user.id),
         receiver_id = body.receiver_id,
@@ -37,6 +52,26 @@ async def send_message(
         thread_id   = body.thread_id,
     )
     return to_message_response(message)
+
+
+@router.get(
+    "/messages/my-manager",
+    summary="Resolve a manager user_id the current tenant should message",
+)
+async def get_my_manager(current_user: User = Depends(get_current_user)):
+    """
+    Returns ``{"manager_user_id": "<id>"}`` for the chat composer.
+
+    Strategy: pick any active manager; fall back to admin if no manager
+    exists. The frontend's chat composer uses this to fill the message
+    ``receiver_id``.
+    """
+    manager = await User.find_one({"role": RoleName.MANAGER.value})
+    if not manager:
+        manager = await User.find_one({"role": RoleName.ADMIN.value})
+    if not manager:
+        return {"manager_user_id": ""}
+    return {"manager_user_id": str(manager.id)}
 
 
 @router.get(

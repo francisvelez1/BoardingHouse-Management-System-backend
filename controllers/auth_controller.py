@@ -12,7 +12,7 @@ from dto.request.login_request    import LoginRequest
 from dto.request.register_request import RegisterRequest
 from dto.response.auth_response   import LoginResponse
 from repository.user_repository   import exists_by_email, exists_by_username, save_user, find_by_email
-from services.authentication_service import authentication_service
+from services.authentication_service import authentication_service, record_successful_login
 from config.google_oauth import (
     get_google_client, GOOGLE_AUTH_URL, GOOGLE_TOKEN_URL,
     GOOGLE_USERINFO, GOOGLE_REDIRECT_URI, FRONTEND_URL,
@@ -186,6 +186,11 @@ async def google_callback(code: str, request: Request):
             role            = RoleName.TENANT,
         )
         await save_user(user)
+
+    # Stamp last_login for the Admin dashboard. Done for both newly
+    # auto-registered users and returning Google-authenticated users so
+    # this path stays in lockstep with the standard /auth/login flow.
+    await record_successful_login(user)
 
     # Step 4: Issue JWT tokens
     role_value    = user.role.value if hasattr(user.role, "value") else str(user.role)

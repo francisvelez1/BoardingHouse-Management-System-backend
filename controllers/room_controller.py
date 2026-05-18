@@ -32,9 +32,17 @@ async def create_room(
     request: RoomCreateRequest = Body(...),
     current_user=Depends(require_roles(RoleName.ADMIN, RoleName.MANAGER)),
 ):
+    # Only stamp ownership when the caller is a MANAGER — admin-created
+    # rooms stay unclaimed (manager_id == None). This is what makes
+    # manager-A's new rooms actually appear on manager-A's dashboard
+    # even though the frontend's "Add Room" button currently posts to
+    # the global /api/rooms endpoint.
+    manager_owner = current_user.id if current_user.role == RoleName.MANAGER else None
+
     data = await room_service.create_room(
         request=request,
         created_by=current_user.username,
+        manager_id=manager_owner,
     )
     return ApiResponse.success(
         data=data,
@@ -135,8 +143,12 @@ async def get_room_stats(
                 "Used by the public room listing/registration page.",
 )
 async def get_vacant_rooms_public(
-    skip:  int = Query(default=0,  ge=0),
-    limit: int = Query(default=20, ge=1, le=100),
+    skip:  int = Query(default=0,    ge=0),
+    # The default of 20 was masking newly-added rooms on the public guest
+    # and tenant landing pages once the boarding house had more than that.
+    # Default raised to 200 (a sensible page size) and the hard cap to 1000
+    # so the frontend can opt into "show everything" via ?limit=1000.
+    limit: int = Query(default=200, ge=1, le=1000),
 ):
     data = await room_service.get_vacant_rooms(skip=skip, limit=limit)
     return ApiResponse.success(

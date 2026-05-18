@@ -51,8 +51,16 @@ class Payment(Document):
     # ── Period this payment covers ────────────────────────────────────────
     period_start:   Optional[datetime] = None    # e.g. April 1, 2026
     period_end:     Optional[datetime] = None    # e.g. April 30, 2026
-    # payPal
-    paypal_order_id: Optional[str] = None
+
+    # ── PayPal-specific tracking ──────────────────────────────────────────
+    # These are written by PaymentService.capture_paypal_payment() after a
+    # successful capture. They must exist as schema fields or Pydantic v2
+    # will reject the attribute assignment and the capture endpoint will 500.
+    paypal_order_id:    Optional[str] = None
+    paypal_capture_id:  Optional[str] = None
+    paypal_payer_id:    Optional[str] = None
+    paypal_payer_email: Optional[str] = None
+
     # ── Payment details ───────────────────────────────────────────────────
     method:         PaymentMethod   = PaymentMethod.CASH
     status:         PaymentStatus   = PaymentStatus.PENDING
